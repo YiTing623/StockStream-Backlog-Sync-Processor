@@ -1,16 +1,55 @@
+import type { Client } from 'pg'
 import { createClient } from './db.js'
 import { IDLE_SLEEP_MS } from './config.js'
-import { applyMessage } from './stock.js'
+import { applyMessage, type Stock, type StockMessage } from './stock.js'
+
+type StoreRow = {
+  chain_id: string
+  store_id: string
+  max_seq: number
+  last_seq: number
+  next_seq: number
+}
+
+type StockRow = {
+  stock: Stock
+  version: number
+  last_seq: number
+}
+
+type QueueMessageRow = StockMessage & {
+  id: number
+  message_id: string
+  chain_id: string
+  store_id: string
+  seq: number
+  kind: string
+  payload: unknown
+  receipt_id: string | null
+  ready_at: Date | null
+  receipt_ready: boolean
+}
+
+type BlockStoreOptions = {
+  details?: Record<string, unknown>
+  messageId?: string | null
+  receiptId?: string | null
+}
+
+type ProcessResult = {
+  processed: boolean
+  active: boolean
+}
 
 const workerSlot = process.env.STOCKSTREAM_WORKER_SLOT ?? 'unknown'
 const workerId = `pid:${process.pid}/slot:${workerSlot}`
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function hasActiveStores(client) {
-  const result = await client.query(`
+async function hasActiveStores(client: Client): Promise<boolean> {
+  const result = await client.query<{ has_active: boolean }>(`
     SELECT EXISTS (
       SELECT 1
       FROM processor_store_state s
@@ -25,8 +64,8 @@ async function hasActiveStores(client) {
   return result.rows[0].has_active
 }
 
-async function selectStore(client) {
-  const result = await client.query(`
+async function selectStore(client: Client): Promise<StoreRow | null> {
+  const result = await client.query<StoreRow>(`
     SELECT
       s.chain_id,
       s.store_id,
@@ -58,11 +97,11 @@ async function selectStore(client) {
 }
 
 async function blockStore(
-  client,
-  store,
-  reason,
-  { details = {}, messageId = null, receiptId = null } = {},
-) {
+  client: Client,
+  store: StoreRow,
+  reason: string,
+  { details = {}, messageId = null, receiptId = null }: BlockStoreOptions = {},
+): Promise<void> {
   await client.query(
     `
       UPDATE processor_store_state
@@ -106,8 +145,8 @@ async function blockStore(
   )
 }
 
-async function loadMessagesForSeq(client, store) {
-  const result = await client.query(
+async function loadMessagesForSeq(client: Client, store: StoreRow): Promise<QueueMessageRow[]> {
+  const result = await client.query<QueueMessageRow>(
     `
       SELECT
         q.id,
@@ -133,7 +172,12 @@ async function loadMessagesForSeq(client, store) {
   return result.rows
 }
 
-async function applyReadyMessage(client, store, stockRow, message) {
+async function applyReadyMessage(
+  client: Client,
+  store: StoreRow,
+  stockRow: StockRow | null,
+  message: QueueMessageRow,
+): Promise<void> {
   const currentStock = stockRow?.stock ?? {}
   const nextStock = applyMessage(currentStock, message)
 
@@ -200,7 +244,7 @@ async function applyReadyMessage(client, store, stockRow, message) {
   )
 }
 
-async function processOne(client) {
+async function processOne(client: Client): Promise<ProcessResult> {
   await client.query('BEGIN')
 
   try {
@@ -211,7 +255,7 @@ async function processOne(client) {
       return { processed: false, active: await hasActiveStores(client) }
     }
 
-    const stockResult = await client.query(
+    const stockResult = await client.query<StockRow>(
       `
         SELECT stock, version, last_seq
         FROM store_stock
@@ -298,7 +342,7 @@ async function processOne(client) {
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   const client = createClient()
   await client.connect()
 
