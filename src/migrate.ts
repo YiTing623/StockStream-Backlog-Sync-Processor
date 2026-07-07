@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url'
+import type { Client } from 'pg'
 import { createClient } from './db.js'
 
-export async function migrateAndRebuildState(client) {
+export async function migrateAndRebuildState(client: Client): Promise<void> {
   await client.query(`
     CREATE TABLE IF NOT EXISTS processor_store_state (
       chain_id UUID NOT NULL,
@@ -108,12 +109,17 @@ export async function migrateAndRebuildState(client) {
   `)
 }
 
-async function main() {
+async function main(): Promise<void> {
   const client = createClient()
   await client.connect()
 
   try {
+    await client.query('BEGIN')
     await migrateAndRebuildState(client)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK')
+    throw error
   } finally {
     await client.end()
   }
