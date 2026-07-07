@@ -1,4 +1,11 @@
-export function applyMessage(currentStock, message) {
+export type Stock = Record<string, unknown>
+
+export type StockMessage = {
+  kind?: unknown
+  payload?: unknown
+}
+
+export function applyMessage(currentStock: Stock | null | undefined, message: StockMessage): Stock {
   const kind = message?.kind
 
   if (kind === 'snapshot') {
@@ -35,7 +42,7 @@ export function applyMessage(currentStock, message) {
     }
 
     for (const sku of unset ?? []) {
-      delete next[sku]
+      delete next[sku as string]
     }
 
     return next
@@ -44,11 +51,11 @@ export function applyMessage(currentStock, message) {
   throw new Error(`unsupported message kind: ${kind}`)
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Stock {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-export function canonicalJson(value) {
+export function canonicalJson(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(canonicalJson)
   }
@@ -64,6 +71,6 @@ export function canonicalJson(value) {
   return value
 }
 
-export function sameJson(left, right) {
+export function sameJson(left: unknown, right: unknown): boolean {
   return JSON.stringify(canonicalJson(left)) === JSON.stringify(canonicalJson(right))
 }
