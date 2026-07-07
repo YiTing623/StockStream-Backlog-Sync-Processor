@@ -2,12 +2,23 @@
   "name": "stockstream-orchestrator-assignment",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "seed": "node seed.js",
-    "migrate": "node src/migrate.js"
+    "build": "tsc",
+    "migrate": "npm run build && node dist/src/migrate.js",
+    "start": "npm run build && node dist/src/index.js",
+    "verify": "npm run build && node dist/scripts/verify.js",
+    "worker": "npm run build && node dist/src/worker.js"
   },
   "dependencies": {
     "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "@types/pg": "^8.20.0",
+    "typescript": "^6.0.3"
   }
 }
